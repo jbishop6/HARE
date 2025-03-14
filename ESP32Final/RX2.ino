@@ -1,63 +1,61 @@
 #include <esp_now.h>
 #include <WiFi.h>
 
-// Structure to receive ESP-NOW messages
-typedef struct Message {
-    char command; // 'U' = Upshift, 'D' = Downshift
-} Message;
+// Change this to the MAC address of ESP32-B
+uint8_t peerMACAddress[] = { 0xCC, 0x8D, 0xA2, 0x0F, 0xC6, 0x38 };  
 
-Message receivedMessage;
+typedef struct message_t {
+    char text[32];
+} message_t;
 
-// LED & Relay Pins
-const int downshiftIndicator = 4; // Red LED + Downshift Relay
-const int upshiftIndicator = 5;   // Yellow LED + Upshift Relay
+message_t myMessage;
 
-// ESP-NOW Callback (Handles Incoming Data)
-void onReceive(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
+void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
+    message_t receivedMessage;
     memcpy(&receivedMessage, incomingData, sizeof(receivedMessage));
-    Serial.print("Received Command: ");
-    Serial.println(receivedMessage.command);
 
-    if (receivedMessage.command == 'U') {
-        activateShift(upshiftIndicator, 250); // Upshift: Yellow LED & relay
-    } else if (receivedMessage.command == 'D') {
-        activateShift(downshiftIndicator, 350); // Downshift: Red LED & relay
-    }
+    Serial.print("Received from ESP32-B: ");
+    Serial.println(receivedMessage.text);
+
+    // Optional: Send a response back
+    strcpy(myMessage.text, "Hi");
+    esp_now_send(peerMACAddress, (uint8_t *)&myMessage, sizeof(myMessage));
 }
 
-// Activate relay & LED for a shift
-void activateShift(int pin, int duration) {
-    Serial.print("Activating relay & LED on Pin ");
-    Serial.print(pin);
-    Serial.print(" for ");
-    Serial.print(duration);
-    Serial.println(" ms");
-
-    digitalWrite(pin, HIGH); // Turn ON LED & relay
-    delay(duration);
-    digitalWrite(pin, LOW);  // Turn OFF LED & relay
+void onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+    Serial.print("Message send status: ");
+    Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
 }
 
 void setup() {
     Serial.begin(115200);
     WiFi.mode(WIFI_STA);
+    esp_now_del_peer(peerMACAddress);  // Remove existing peer
 
-    // Initialize ESP-NOW
     if (esp_now_init() != ESP_OK) {
-        Serial.println("ESP-NOW Init Failed");
+        Serial.println("ESP-NOW initialization failed!");
         return;
     }
 
-    esp_now_register_recv_cb(onReceive);
+    esp_now_register_send_cb(onDataSent);
+    esp_now_register_recv_cb(onDataRecv);
 
-    // Set LED & relay pins as OUTPUT
-    pinMode(downshiftIndicator, OUTPUT);
-    pinMode(upshiftIndicator, OUTPUT);
+    esp_now_peer_info_t peerInfo;
+    memcpy(peerInfo.peer_addr, peerMACAddress, 6);
+    peerInfo.channel = 0;
+    peerInfo.encrypt = false;
 
-    digitalWrite(downshiftIndicator, LOW); // Start with relays OFF
-    digitalWrite(upshiftIndicator, LOW);
+    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+        Serial.println("Failed to add peer");
+        return;
+    }
+
+    // Send initial message
+    strcpy(myMessage.text, "Hi");
+    esp_now_send(peerMACAddress, (uint8_t *)&myMessage, sizeof(myMessage));
 }
 
 void loop() {
-    // Nothing needed here; ESP-NOW receives automatically
+    delay(3000);  // Send message every 3 seconds
+    esp_now_send(peerMACAddress, (uint8_t *)&myMessage, sizeof(myMessage));
 }
