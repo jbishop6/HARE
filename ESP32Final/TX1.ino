@@ -1,90 +1,109 @@
-#include <esp_now.h>
-#include <WiFi.h>
-#include <string>
+#include <esp_now.h> 
+#include <WiFi.h> 
 
+#define buttonUpPin 12   // Change to the correct pin for ButtonUp 
+#define buttonDownPin 13  // Change to the correct pin for ButtonDown 
 
+// REPLACE WITH YOUR RECEIVER MAC Address 
 
+uint8_t broadcastAddress[] = {0xcc, 0x8d, 0xa2, 0x0f, 0xc9, 0x84}; 
 
-uint8_t peerMACAddress[] = { 0xCC, 0x8D, 0xA2, 0x0F, 0xC9, 0x84 };  
+// Structure to send data (must match receiver structure) 
 
-typedef struct message_t {
-    char text[32];
-} message_t;
+typedef struct struct_message { 
 
-message_t myMessage;
-std::string success;
+  bool UP; 
 
-void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
-    message_t receivedMessage;
-    memcpy(&receivedMessage, incomingData, sizeof(receivedMessage));
+  bool DOWN; 
 
-    Serial.print("Received from ESP32-A: ");
-    Serial.println(receivedMessage.text);
+} struct_message; 
 
-    // Optional: Send a response back
-    strcpy(myMessage.text, "Bye");
-    esp_now_send(peerMACAddress, (uint8_t *)&myMessage, sizeof(myMessage));
-}
+struct_message myData; 
 
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  Serial.print("\r\nLast Packet Send Status:\t");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
-  if (status ==0){
-    success = "Delivery Success :)";
-  }
-  else{
-    success = "Delivery Fail :(";
-  }
-}
+esp_now_peer_info_t peerInfo; 
 
-void setup() {
-    Serial.begin(115200);
-    Serial.println("Starting ESP32...");
+// Callback function when data is sent 
 
-    WiFi.mode(WIFI_STA);  // REQUIRED for ESP-NOW
-    Serial.println("WiFi mode set to STA");
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) { 
 
-    if (esp_now_init() != ESP_OK) {
-        Serial.println("ESP-NOW initialization failed!");
-        return;
-    } else {
-        Serial.println("ESP-NOW initialized successfully!");
-    }
+  Serial.print("\r\nLast Packet Send Status:\t"); 
 
-    esp_now_register_send_cb(OnDataSent);
-    esp_now_register_recv_cb(onDataRecv);
-    Serial.println("Callbacks registered.");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail"); 
 
-    // Remove old peer (if exists) before adding a new one
-    esp_now_del_peer(peerMACAddress);
-    
-    esp_now_peer_info_t peerInfo;
-    memset(&peerInfo, 0, sizeof(peerInfo));  // Ensure struct is clean
-    memcpy(peerInfo.peer_addr, peerMACAddress, 6);
-    peerInfo.channel = 0;
-    peerInfo.encrypt = false;
+} 
 
-    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-        Serial.println("Failed to add peer!");
-        return;
-    } else {
-        Serial.println("Peer added successfully!");
-    }
+void setup() { 
 
-    // Send initial message
-    strcpy(myMessage.text, "Hello!");
-    Serial.println("Sending first message...");
-    esp_err_t result = esp_now_send(peerMACAddress, (uint8_t *)&myMessage, sizeof(myMessage));
+  Serial.begin(115200); 
 
-    if (result == ESP_OK) {
-        Serial.println("Message sent successfully!");
-    } else {
-        Serial.println("Message sending failed!");
-    }
-}
+  // Set ESP32 to Wi-Fi Station mode 
 
+  WiFi.mode(WIFI_STA); 
 
-void loop() {
-    delay(3000);  // Send message every 3 seconds
-    esp_now_send(peerMACAddress, (uint8_t *)&myMessage, sizeof(myMessage));
-}
+  // Set up the button pins as inputs with internal pull-down resistors 
+
+  delay(500); 
+
+  // Initialize ESP-NOW 
+
+  if (esp_now_init() != ESP_OK) { 
+
+    Serial.println("Error initializing ESP-NOW"); 
+
+    return; 
+
+  } 
+
+  // Register send callback function 
+
+  esp_now_register_send_cb(OnDataSent); 
+
+  // Register peer 
+
+  memcpy(peerInfo.peer_addr, broadcastAddress, 6); 
+
+  peerInfo.channel = 0;   
+
+  peerInfo.encrypt = false; 
+
+  // Add peer         
+
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) { 
+
+    Serial.println("Failed to add peer"); 
+
+    return; 
+
+  } 
+
+  pinMode(buttonUpPin, INPUT_PULLDOWN); 
+
+  pinMode(buttonDownPin, INPUT_PULLDOWN); 
+
+} 
+
+void loop() { 
+
+  // Read actual button states 
+
+  myData.UP = digitalRead(buttonUpPin); 
+
+  myData.DOWN = digitalRead(buttonDownPin); 
+
+  // Send message via ESP-NOW 
+
+  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData)); 
+
+  if (result == ESP_OK) { 
+
+    Serial.println("Sent with success"); 
+
+  } else { 
+
+    Serial.println("Error sending the data"); 
+
+  } 
+
+  delay(10);  // Increased delay to reduce potential collisions 
+
+} 
